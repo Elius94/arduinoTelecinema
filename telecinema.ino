@@ -1,15 +1,15 @@
 // Stepper motor control pins
-#define motor_enable_pin 2
-#define motor_dir_pin 3
-#define motor_step_pin 4
+#define motor_enable_pin 4
+#define motor_dir_pin 5
+#define motor_step_pin 6
 
 // Sensors pins
-#define frame_detect_pin 5 // Must be an interrupt pin
-#define film_end_pin 6
+#define frame_detect_pin 2 // Must be an interrupt pin
+#define film_end_pin 3
 
 // Output pins
-#define led_pin 7
-#define camera_pin 8
+#define led_pin 13
+#define camera_pin 7
 
 // Other parameters
 #define serial_speed 9600
@@ -30,7 +30,8 @@ enum serial_commands
     CMD_GET_RUN = 8,
     CMD_GET_FRAME_COUNT = 9,
     CMD_GO_TO_FRAME = 10,
-    CMD_RESET = 11
+    CMD_SET_SHOOT_DELAY = 11,
+    CMD_RESET = 12
 };
 
 enum status_codes
@@ -63,6 +64,8 @@ int desired_frame = -1;
 int status = STATUS_IDLE;
 unsigned long last_step_time = 0;
 unsigned long step_delay = 0;
+unsigned long shoot_request_time = 0; // Time when the shoot request was sent
+long shoot_delay = 0;                 // in milliseconds (0 = disabled)
 
 void setPins()
 {
@@ -78,65 +81,86 @@ void setPins()
     attachInterrupt(digitalPinToInterrupt(frame_detect_pin), updateFrameCount, RISING);
 }
 
-void setMotorDirection(int direction)
+bool setMotorDirection(int direction)
 {
     if (direction == DIRECTION_FORWARD)
     {
         digitalWrite(motor_dir_pin, HIGH);
     }
-    else
+    else if (direction == DIRECTION_BACKWARD)
     {
         digitalWrite(motor_dir_pin, LOW);
     }
+    else
+    {
+        return false;
+    }
+    return true;
 }
 
-void setMode(int _mode)
+bool setMode(int _mode)
 {
     if (_mode == MODE_FREE)
     {
         mode = MODE_FREE;
+        return true;
+    }
+    else if (_mode == MODE_CAMERA)
+    {
+        mode = MODE_CAMERA;
+        return true;
     }
     else
     {
-        mode = MODE_CAMERA;
+        return false;
     }
 }
 
-void setRun(int _run)
+bool setRun(int _run)
 {
     if (_run == 1)
     {
         run = 1;
+        return true;
+    }
+    else if (_run == 0)
+    {
+        run = 0;
+        return true;
     }
     else
     {
-        run = 0;
+        return false;
     }
 }
 
-void setSpeed(int _speed) // 0-100 % of max speed that is in steps per second. The step_delay is the period between steps in microseconds.
+bool setSpeed(int _speed) // 0-100 % of max speed that is in steps per second. The step_delay is the period between steps in microseconds.
 {
     if (_speed > 0 && _speed <= 100)
     {
         speed = _speed;
         step_delay = 1000000 / (max_speed * speed / 100);
+        return true;
     }
     else
     {
         speed = 0;
         step_delay = 1000000 / max_speed;
+        return false;
     }
 }
 
-void setTargetFrame(int frame_number)
+bool setTargetFrame(int frame_number)
 {
     if (frame_number > 0)
     {
         desired_frame = frame_number;
+        return true;
     }
     else
     {
         desired_frame = -1;
+        return false;
     }
 }
 
@@ -180,6 +204,23 @@ void setStatus(int _status)
     }
 }
 
+bool setShootDelay(int _shoot_delay)
+{
+    if (_shoot_delay > 0)
+    {
+        shoot_delay = _shoot_delay;
+    }
+    else if (_shoot_delay == 0)
+    {
+        shoot_delay = 0;
+    }
+    else
+    {
+        return false;
+    }
+    return true;
+}
+
 int getStatus()
 {
     return status;
@@ -218,10 +259,7 @@ int getTargetFrame()
 // Interrupt callback function
 void updateFrameCount()
 {
-    if (getMode() == MODE_CAMERA)
-    {
-        shoot(); // Take a picture
-    }
+    //Serial.println("Frame detected");
     if (getMotorDirection() == DIRECTION_FORWARD)
     {
         setFrameCount(getFrameCount() + 1);
@@ -230,6 +268,18 @@ void updateFrameCount()
     {
         setFrameCount(getFrameCount() - 1);
     }
+    if (getMode() == MODE_CAMERA)
+    {
+        if (shoot_delay > 0)
+        {
+            shoot_request_time = millis();
+        }
+        else
+        {
+            shoot(); // Shoot the film
+        }
+    }
+    //Serial.println(getFrameCount());
 }
 
 void shoot()
@@ -268,21 +318,79 @@ int parseSerialCommands()
     switch (command_int)
     {
     case CMD_SET_SPEED:
-        setSpeed(parameter_int);
-        Serial.println(serial_ack);
-        break;
+    {
+        if (setSpeed(parameter_int)) {
+            Serial.print(serial_ack);
+            Serial.println(" - Speed set to " + String(parameter_int));
+        } else {
+            Serial.print(serial_nack);
+            Serial.println(" - Speed could not be set to " + String(parameter_int));
+        }
+    }
+    break;
     case CMD_SET_DIRECTION:
-        setMotorDirection(parameter_int);
-        Serial.println(serial_ack);
-        break;
+    {
+        if (setMotorDirection(parameter_int))
+        {
+            Serial.print(serial_ack);
+            if (parameter_int == DIRECTION_FORWARD)
+            {
+                Serial.println(" - Direction set to forward");
+            }
+            else
+            {
+                Serial.println(" - Direction set to reverse");
+            }
+        }
+        else
+        {
+            Serial.print(serial_nack);
+            Serial.println(" - Direction could not be set");
+        }
+    }
+    break;
     case CMD_SET_MODE:
-        setMode(parameter_int);
-        Serial.println(serial_ack);
-        break;
+    {
+        if (setMode(parameter_int))
+        {
+            Serial.print(serial_ack);
+            if (parameter_int == MODE_FREE)
+            {
+                Serial.println(" - Mode set to free");
+            }
+            else
+            {
+                Serial.println(" - Mode set to camera");
+            }
+        }
+        else
+        {
+            Serial.print(serial_nack);
+            Serial.println(" - Mode could not be set");
+        }
+    }
+    break;
     case CMD_SET_RUN:
-        setRun(parameter_int);
-        Serial.println(serial_ack);
-        break;
+    {
+        if (setRun(parameter_int))
+        {
+            Serial.print(serial_ack);
+            if (parameter_int == 1)
+            {
+                Serial.println(" - Run set to on");
+            }
+            else
+            {
+                Serial.println(" - Run set to off");
+            }
+        }
+        else
+        {
+            Serial.print(serial_nack);
+            Serial.println(" - Run could not be set");
+        }
+    }
+    break;
     case CMD_GET_STATUS:
         Serial.println(getStatus());
         break;
@@ -305,6 +413,20 @@ int parseSerialCommands()
         setTargetFrame(parameter_int);
         Serial.println(serial_ack);
         break;
+    case CMD_SET_SHOOT_DELAY:
+    {
+        if (setShootDelay(parameter_int))
+        {
+            Serial.print(serial_ack);
+            Serial.println(" - Shoot delay set to " + String(parameter_int));
+        }
+        else
+        {
+            Serial.print(serial_nack);
+            Serial.println(" - Shoot delay could not be set to " + String(parameter_int));
+        }
+    }
+    break;
     case CMD_RESET:
         setStatus(STATUS_IDLE);
         setSpeed(0);
@@ -313,7 +435,9 @@ int parseSerialCommands()
         setRun(0);
         setFrameCount(0);
         setTargetFrame(0);
-        Serial.println(serial_ack);
+        setShootDelay(0);
+        Serial.print(serial_ack);
+        Serial.println("Reset complete");
         break;
     default:
         return -1;
@@ -370,6 +494,15 @@ void loop()
                     delay(1);
                     digitalWrite(motor_step_pin, LOW);
                     last_step_time = millis();
+                }
+                // Check if it's time to shoot the film
+                if (shoot_delay > 0 && shoot_request_time > 0)
+                {
+                    if (millis() - shoot_request_time >= shoot_delay)
+                    {
+                        shoot();
+                        shoot_request_time = 0;
+                    }
                 }
             }
             else if (getMode() == MODE_FREE)
