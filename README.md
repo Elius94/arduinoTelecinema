@@ -1,5 +1,12 @@
 # Telecinema Arduino Controller (Main unit)
-It must be wrapped inside an old film projector.
+This is the firmware of the main controller unit of a Film Acquiring system.
+This machine is based on an old modded projector with a Mirrorless Camera istead of the projector lens.
+The moving of the projector is done with a stepper motor connected to the original pulley.
+A magnetic on/off switch is placed in front of the shutter rotative disc that close and reopen the frame window. 
+With a magnet fixed on one of the shutter arms the sensor can trigger for the frame presence.
+An output GPIO pin connected to an opto isolator circuit simulate the remote camera trigger button to make it shoot.
+The frame presence pin could not be really in sync with the correct frame position, so you can introduce a delay with the param 'CMD_SET_SHOOT_DELAY' (milliseconds).
+This main controller unit is controllable with a serial port that can be the built in USB or the tx0, rx0 (uart) of the Arduino.
 
 ## Hardware required
 * Arduino Uno or any other compatible board
@@ -11,11 +18,18 @@ It must be wrapped inside an old film projector.
 * Serial port (to communicate with the Arduino)
 
 ## Serial commands (USB or uart0)
+All the commands follows this pattern:
+
+```sh
+[COMMAND_NUMBER]:[VALUE]
+```
+
 This is the list of commands that the Arduino can receive:
+
 ```c++
 enum serial_commands
 {
-    CMD_SET_SPEED = 0,
+    CMD_SET_SPEED = 0, 
     CMD_SET_DIRECTION = 1,
     CMD_SET_MODE = 2,
     CMD_SET_RUN = 3,
