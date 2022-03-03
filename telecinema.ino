@@ -511,7 +511,7 @@ void loop()
             else if (getMode() == MODE_FREE)
             {
                 // Go to Direction and move the motor until the desired frame is reached or the last frame is reached
-                if (getTargetFrame() > 0)
+                if (getTargetFrame() > -1)
                 {
                     // Find the direction to go to the target frame and set the motor direction
                     if (getFrameCount() < getTargetFrame())
