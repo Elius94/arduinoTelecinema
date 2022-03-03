@@ -259,7 +259,7 @@ int getTargetFrame()
 // Interrupt callback function
 void updateFrameCount()
 {
-    //Serial.println("Frame detected");
+    // Serial.println("Frame detected");
     if (getMotorDirection() == DIRECTION_FORWARD)
     {
         setFrameCount(getFrameCount() + 1);
@@ -279,7 +279,7 @@ void updateFrameCount()
             shoot(); // Shoot the film
         }
     }
-    //Serial.println(getFrameCount());
+    // Serial.println(getFrameCount());
 }
 
 void shoot()
@@ -319,10 +319,13 @@ int parseSerialCommands()
     {
     case CMD_SET_SPEED:
     {
-        if (setSpeed(parameter_int)) {
+        if (setSpeed(parameter_int))
+        {
             Serial.print(serial_ack);
             Serial.println(" - Speed set to " + String(parameter_int));
-        } else {
+        }
+        else
+        {
             Serial.print(serial_nack);
             Serial.println(" - Speed could not be set to " + String(parameter_int));
         }
@@ -508,16 +511,33 @@ void loop()
             else if (getMode() == MODE_FREE)
             {
                 // Go to Direction and move the motor until the desired frame is reached or the last frame is reached
-                if (getFrameCount() < getTargetFrame())
+                if (getTargetFrame() > 0)
                 {
-                    setLed(1);
-                    if (millis() - last_step_time >= step_delay)
+                    // Find the direction to go to the target frame and set the motor direction
+                    if (getFrameCount() < getTargetFrame())
                     {
-                        digitalWrite(motor_step_pin, HIGH);
-                        delay(1);
-                        digitalWrite(motor_step_pin, LOW);
-                        last_step_time = millis();
+                        setMotorDirection(DIRECTION_FORWARD);
                     }
+                    else if (getFrameCount() > getTargetFrame())
+                    {
+                        setMotorDirection(DIRECTION_BACKWARD);
+                    } else { // If the frame count is equal to the target frame, stop the motor
+                        setStatus(STATUS_IDLE);
+                    }
+                }
+                else
+                {
+                    // Go to the direction specified by the user
+                    setMotorDirection(getMotorDirection());
+                    setLed(1);
+                }
+                // check millis to see if it's time to rise a signal to the step pin (1ms)
+                if (millis() - last_step_time >= step_delay)
+                {
+                    digitalWrite(motor_step_pin, HIGH);
+                    delay(1);
+                    digitalWrite(motor_step_pin, LOW);
+                    last_step_time = millis();
                 }
             }
         }
