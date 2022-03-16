@@ -1,6 +1,6 @@
 {
-    "board": "arduino:avr:uno",
+    "board": "arduino:avr:micro",
     "programmer": "arduino:avrispmkii",
     "sketch": "telecinema.ino",
-    "port": "COM8"
+    "port": "COM6"
 }

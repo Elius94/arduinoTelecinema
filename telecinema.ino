@@ -1,15 +1,15 @@
 // Stepper motor control pins
-#define motor_enable_pin 4
-#define motor_dir_pin 5
-#define motor_step_pin 6
+#define motor_enable_pin 14
+#define motor_dir_pin 16
+#define motor_step_pin 10
 
 // Sensors pins
-#define frame_detect_pin 2 // Must be an interrupt pin
-#define film_end_pin 3
+#define frame_detect_pin 3 // Must be an interrupt pin
+#define film_end_pin 4
 
 // Output pins
 #define led_pin 13
-#define camera_pin 7
+#define camera_pin 15
 
 // Other parameters
 #define serial_speed 9600
@@ -54,18 +54,20 @@ enum mode_codes
 };
 
 // Parameters
-int speed = 0;
-int max_speed = 200;
+unsigned long long speed = 50;
+unsigned long long max_speed = 10000; // steps per second
 int direction = DIRECTION_FORWARD;
-int mode = MODE_FREE;
+int mode = MODE_CAMERA;
 int run = 0;
 int frame_count = 0;
 int desired_frame = -1;
 int status = STATUS_IDLE;
-unsigned long last_step_time = 0;
-unsigned long step_delay = 0;
-unsigned long shoot_request_time = 0; // Time when the shoot request was sent
-long shoot_delay = 0;                 // in milliseconds (0 = disabled)
+unsigned long long last_step_time = 0;
+unsigned long long step_delay = 1000; // microseconds
+unsigned long long shoot_request_time = 0; // Time when the shoot request was sent
+unsigned long long shoot_delay = 0;                 // in milliseconds (0 = disabled)
+unsigned long long shoot_release_request_time = 0; // Time when the shoot release request was sent
+unsigned long long shoot_release_delay = 500;                 // in milliseconds (0 = disabled)
 
 void setPins()
 {
@@ -134,18 +136,19 @@ bool setRun(int _run)
     }
 }
 
-bool setSpeed(int _speed) // 0-100 % of max speed that is in steps per second. The step_delay is the period between steps in microseconds.
+bool setSpeed(unsigned long long _speed) // 0-100 % of max speed that is in steps per second. The step_delay is the period between steps in microseconds.
 {
     if (_speed > 0 && _speed <= 100)
     {
         speed = _speed;
-        step_delay = 1000000 / (max_speed * speed / 100);
+        unsigned long long _tmp = 1000000 / (max_speed * speed / 100);
+        step_delay = round(_tmp);
         return true;
     }
     else
     {
         speed = 0;
-        step_delay = 1000000 / max_speed;
+        step_delay = round(1000000 / max_speed);
         return false;
     }
 }
@@ -204,7 +207,7 @@ void setStatus(int _status)
     }
 }
 
-bool setShootDelay(int _shoot_delay)
+bool setShootDelay(unsigned long long _shoot_delay)
 {
     if (_shoot_delay > 0)
     {
@@ -226,7 +229,7 @@ int getStatus()
     return status;
 }
 
-int getSpeed()
+unsigned long long getSpeed()
 {
     return speed;
 }
@@ -276,17 +279,23 @@ void updateFrameCount()
         }
         else
         {
-            shoot(); // Shoot the film
+            shoot(true); // Shoot the film
+            shoot_release_request_time = millis();
         }
     }
     // Serial.println(getFrameCount());
 }
 
-void shoot()
+void shoot(bool val)
 {
-    digitalWrite(camera_pin, HIGH);
-    delay(2);
-    digitalWrite(camera_pin, LOW);
+    if (val)
+    {
+        digitalWrite(camera_pin, HIGH);
+    }
+    else
+    {
+        digitalWrite(camera_pin, LOW);
+    }
 }
 
 void setMotorEnable(int enable)
@@ -398,7 +407,7 @@ int parseSerialCommands()
         Serial.println(getStatus());
         break;
     case CMD_GET_SPEED:
-        Serial.println(getSpeed());
+        Serial.println((int)getSpeed());
         break;
     case CMD_GET_DIRECTION:
         Serial.println(getMotorDirection());
@@ -490,21 +499,31 @@ void loop()
                 // Go Forward and move the motor until the last frame is reached
                 setMotorDirection(DIRECTION_FORWARD);
                 setLed(1);
-                // check millis to see if it's time to rise a signal to the step pin (1ms)
-                if (millis() - last_step_time >= step_delay)
+                // check micros to see if it's time to rise a signal to the step pin (1ms)
+                if (micros() - last_step_time >= step_delay)
                 {
                     digitalWrite(motor_step_pin, HIGH);
-                    delay(1);
+                    //delay(2);
                     digitalWrite(motor_step_pin, LOW);
-                    last_step_time = millis();
+                    last_step_time = micros();
                 }
                 // Check if it's time to shoot the film
                 if (shoot_delay > 0 && shoot_request_time > 0)
                 {
                     if (millis() - shoot_request_time >= shoot_delay)
                     {
-                        shoot();
+                        shoot(true);
                         shoot_request_time = 0;
+                        shoot_release_request_time = millis();
+                    }
+                }
+                // Check if it's time to release the shutter button
+                if (shoot_release_delay > 0 && shoot_release_request_time > 0)
+                {
+                    if (millis() - shoot_release_request_time >= shoot_release_delay)
+                    {
+                        shoot(false);
+                        shoot_release_request_time = 0;
                     }
                 }
             }
@@ -531,13 +550,13 @@ void loop()
                     setMotorDirection(getMotorDirection());
                     setLed(1);
                 }
-                // check millis to see if it's time to rise a signal to the step pin (1ms)
-                if (millis() - last_step_time >= step_delay)
+                // check micros to see if it's time to rise a signal to the step pin (1ms)
+                if (micros() - last_step_time >= step_delay)
                 {
                     digitalWrite(motor_step_pin, HIGH);
-                    delay(1);
+                    //delay(2);
                     digitalWrite(motor_step_pin, LOW);
-                    last_step_time = millis();
+                    last_step_time = micros();
                 }
             }
         }
